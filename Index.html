@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Suivi Heure Caisson</title>
+  <style>
+    /* ─── RESET & BASE ─── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:         #f4f6fa;
+      --surface:    #ffffff;
+      --primary:    #2563eb;
+      --primary-lt: #dbeafe;
+      --accent:     #1d4ed8;
+      --text:       #1e293b;
+      --muted:      #64748b;
+      --border:     #e2e8f0;
+      --green:      #16a34a;
+      --green-lt:   #dcfce7;
+      --amber:      #d97706;
+      --amber-lt:   #fef3c7;
+      --blue-lt:    #eff6ff;
+      --radius:     10px;
+      --shadow:     0 1px 4px rgba(0,0,0,.08), 0 4px 16px rgba(0,0,0,.06);
+    }
+
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+    }
+
+    /* ─── HEADER ─── */
+    header {
+      background: var(--primary);
+      color: #fff;
+      padding: 20px 24px 16px;
+    }
+    header h1 {
+      font-size: 1.4rem;
+      font-weight: 700;
+      letter-spacing: .3px;
+    }
+    header p {
+      opacity: .8;
+      font-size: .85rem;
+      margin-top: 4px;
+    }
+
+    /* ─── MAIN WRAPPER ─── */
+    main {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px 16px 48px;
+    }
+
+    /* ─── FILTRES ─── */
+    .filters {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    .filter-btn {
+      padding: 8px 18px;
+      border: 2px solid var(--border);
+      background: var(--surface);
+      border-radius: 99px;
+      font-size: .88rem;
+      font-weight: 600;
+      color: var(--muted);
+      cursor: pointer;
+      transition: all .18s;
+    }
+    .filter-btn:hover {
+      border-color: var(--primary);
+      color: var(--primary);
+    }
+    .filter-btn.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    /* ─── TUILES STATS ─── */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 16px;
+      margin-bottom: 28px;
+    }
+    .stat-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      padding: 20px 22px;
+      box-shadow: var(--shadow);
+      border-top: 4px solid var(--primary);
+    }
+    .stat-card.green  { border-top-color: var(--green); }
+    .stat-card.amber  { border-top-color: var(--amber); }
+    .stat-card .label {
+      font-size: .78rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: .6px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .stat-card .value {
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1;
+    }
+    .stat-card .sub {
+      font-size: .8rem;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* ─── SECTION TITRE ─── */
+    .section-title {
+      font-size: 1rem;
+      font-weight: 700;
+      color: var(--text);
+      margin-bottom: 14px;
+    }
+
+    /* ─── TABLEAU ─── */
+    .table-wrapper {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow-x: auto;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: .88rem;
+    }
+    thead th {
+      background: var(--blue-lt);
+      color: var(--primary);
+      font-weight: 700;
+      text-align: left;
+      padding: 12px 16px;
+      border-bottom: 2px solid var(--border);
+      white-space: nowrap;
+    }
+    thead th:not(:first-child) {
+      text-align: center;
+    }
+    tbody tr {
+      border-bottom: 1px solid var(--border);
+      transition: background .12s;
+    }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: var(--bg); }
+    tbody td {
+      padding: 11px 16px;
+      color: var(--text);
+      white-space: nowrap;
+    }
+    tbody td:not(:first-child) {
+      text-align: center;
+      color: var(--muted);
+    }
+    .td-total {
+      font-weight: 700;
+      color: var(--primary) !important;
+      background: var(--primary-lt);
+    }
+    .td-zero { color: var(--border) !important; }
+
+    /* ─── MESSAGE VIDE ─── */
+    .empty-msg {
+      text-align: center;
+      padding: 48px 24px;
+      color: var(--muted);
+    }
+    .empty-msg svg {
+      display: block;
+      margin: 0 auto 16px;
+      opacity: .35;
+    }
+    .empty-msg p { font-size: .95rem; }
+
+    /* ─── SPINNER ─── */
+    .spinner-wrap {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      padding: 64px 0;
+    }
+    .spinner {
+      width: 40px; height: 40px;
+      border: 4px solid var(--border);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ─── RESPONSIVE ─── */
+    @media (max-width: 600px) {
+      header h1 { font-size: 1.1rem; }
+      .stat-card .value { font-size: 1.6rem; }
+      table { font-size: .82rem; }
+      thead th, tbody td { padding: 10px 10px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>🫧 Suivi Heure Caisson</h1>
+  <p>Analyse des heures de travail réalisées en séance caisson</p>
+</header>
+
+<main>
+
+  <!-- Filtres -->
+  <div class="filters" id="filters">
+    <button class="filter-btn active" data-filtre="annee_courante" onclick="setFiltre(this)">
+      Année en cours
+    </button>
+    <button class="filter-btn" data-filtre="2025" onclick="setFiltre(this)">
+      2025
+    </button>
+    <button class="filter-btn" data-filtre="tout" onclick="setFiltre(this)">
+      Tout le temps
+    </button>
+  </div>
+
+  <!-- Zone de contenu (spinner → stats + tableau) -->
+  <div id="content">
+    <div class="spinner-wrap"><div class="spinner"></div></div>
+  </div>
+
+</main>
+
+<script>
+  var filtreActif = 'annee_courante';
+
+  // ─── Chargement des données ───────────────────────────────────────────
+  function chargerDonnees() {
+    document.getElementById('content').innerHTML =
+      '<div class="spinner-wrap"><div class="spinner"></div></div>';
+
+    google.script.run
+      .withSuccessHandler(function(data) { afficher(data); })
+      .withFailureHandler(function(err)  { afficherErreur(err); })
+      .getData(filtreActif);
+  }
+
+  // ─── Changement de filtre ─────────────────────────────────────────────
+  function setFiltre(btn) {
+    document.querySelectorAll('.filter-btn').forEach(function(b) {
+      b.classList.remove('active');
+    });
+    btn.classList.add('active');
+    filtreActif = btn.getAttribute('data-filtre');
+    chargerDonnees();
+  }
+
+  // ─── Formatage des durées ─────────────────────────────────────────────
+  function formatDuree(minutes) {
+    if (!minutes || minutes <= 0) return '—';
+    var h = Math.floor(minutes / 60);
+    var m = Math.round(minutes % 60);
+    if (h === 0) return m + ' min';
+    if (m === 0) return h + ' h';
+    return h + ' h ' + (m < 10 ? '0' : '') + m;
+  }
+
+  // ─── Affichage principal ──────────────────────────────────────────────
+  function afficher(data) {
+    var postes = ['Door Man', 'Observateur', 'Sécurité', 'Speaker', 'Suiveur'];
+    var html = '';
+
+    // ── Tuiles stats ──
+    html += '<div class="stats-grid">';
+
+    html += '<div class="stat-card">'
+          + '<div class="label">Séances réalisées</div>'
+          + '<div class="value">' + data.stats.nbSeances + '</div>'
+          + '<div class="sub">séances ≥ 10 min comptabilisées</div>'
+          + '</div>';
+
+    html += '<div class="stat-card green">'
+          + '<div class="label">Durée moyenne / séance</div>'
+          + '<div class="value">' + formatDuree(data.stats.dureeMoyenne) + '</div>'
+          + '<div class="sub">plafonnée à 40 min</div>'
+          + '</div>';
+
+    html += '<div class="stat-card amber">'
+          + '<div class="label">Temps total cumulé</div>'
+          + '<div class="value">' + formatDuree(data.stats.totalCumule) + '</div>'
+          + '<div class="sub">tous agents confondus</div>'
+          + '</div>';
+
+    html += '</div>'; // /stats-grid
+
+    // ── Tableau agents ──
+    html += '<div class="section-title">Détail par agent</div>';
+
+    if (!data.agents || data.agents.length === 0) {
+      html += '<div class="table-wrapper"><div class="empty-msg">'
+            + '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">'
+            + '<circle cx="12" cy="12" r="10"/>'
+            + '<line x1="12" y1="8" x2="12" y2="12"/>'
+            + '<line x1="12" y1="16" x2="12.01" y2="16"/>'
+            + '</svg>'
+            + '<p>Aucune donnée trouvée pour la période sélectionnée.</p>'
+            + '</div></div>';
+    } else {
+      html += '<div class="table-wrapper"><table>';
+      html += '<thead><tr>'
+            + '<th>Agent</th>';
+      postes.forEach(function(p) { html += '<th>' + p + '</th>'; });
+      html += '<th>Total</th>';
+      html += '</tr></thead><tbody>';
+
+      data.agents.forEach(function(agent) {
+        html += '<tr>';
+        html += '<td><strong>' + escHtml(agent.nom) + '</strong></td>';
+        postes.forEach(function(p) {
+          var v = agent.postes[p] || 0;
+          if (v > 0) {
+            html += '<td>' + formatDuree(v) + '</td>';
+          } else {
+            html += '<td class="td-zero">—</td>';
+          }
+        });
+        html += '<td class="td-total">' + formatDuree(agent.total) + '</td>';
+        html += '</tr>';
+      });
+
+      html += '</tbody></table></div>';
+    }
+
+    document.getElementById('content').innerHTML = html;
+  }
+
+  // ─── Affichage d'erreur ───────────────────────────────────────────────
+  function afficherErreur(err) {
+    document.getElementById('content').innerHTML =
+      '<div class="table-wrapper"><div class="empty-msg">'
+      + '<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#ef4444" stroke-width="1.5">'
+      + '<circle cx="12" cy="12" r="10"/>'
+      + '<line x1="12" y1="8" x2="12" y2="12"/>'
+      + '<line x1="12" y1="16" x2="12.01" y2="16"/>'
+      + '</svg>'
+      + '<p style="color:#ef4444">Erreur lors du chargement des données.<br>'
+      + '<small>' + (err && err.message ? escHtml(err.message) : '') + '</small></p>'
+      + '</div></div>';
+  }
+
+  // ─── Echappement HTML ─────────────────────────────────────────────────
+  function escHtml(str) {
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  // ─── Init ─────────────────────────────────────────────────────────────
+  window.addEventListener('load', function() {
+    chargerDonnees();
+  });
+</script>
+
+</body>
+</html>
