@@ -264,19 +264,46 @@
     .toggle-btn.visible  { border-color: var(--green); color: var(--green); background: var(--green-lt); }
     .toggle-btn.hidden-  { border-color: var(--muted); color: var(--muted); background: var(--bg); }
     .toggle-btn:disabled { opacity: .5; cursor: not-allowed; }
-    .move-btn {
-      padding: 4px 9px;
-      border-radius: 6px;
-      border: 1.5px solid var(--border);
-      background: var(--surface);
+
+    /* drag & drop */
+    .agent-row { cursor: grab; transition: background .1s, opacity .1s; }
+    .agent-row:active { cursor: grabbing; }
+    .agent-row.dragging { opacity: .35; background: var(--primary-lt); }
+    .agent-row.drag-over { border-top: 2px solid var(--primary); }
+    .drag-handle {
       color: var(--muted);
-      font-size: .85rem;
-      cursor: pointer;
-      transition: all .15s;
-      line-height: 1;
+      font-size: 1rem;
+      padding: 0 6px 0 0;
+      cursor: grab;
+      user-select: none;
     }
-    .move-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: var(--primary-lt); }
-    .move-btn:disabled { opacity: .25; cursor: not-allowed; }
+
+    /* bouton debug */
+    .btn-debug {
+      margin-top: 14px;
+      width: 100%;
+      padding: 7px;
+      background: none;
+      border: 1.5px dashed var(--border);
+      border-radius: 8px;
+      color: var(--muted);
+      font-size: .78rem;
+      cursor: pointer;
+    }
+    .btn-debug:hover { border-color: var(--primary); color: var(--primary); }
+    .debug-box {
+      margin-top: 8px;
+      background: #f8fafc;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: .75rem;
+      color: var(--muted);
+      white-space: pre-wrap;
+      max-height: 160px;
+      overflow-y: auto;
+      display: none;
+    }
 
     /* ajout agent */
     .add-agent-form {
@@ -385,9 +412,13 @@
         👥 Gestion des agents
         <button class="modal-close" onclick="fermerGestion()">✕</button>
       </h2>
-      <div id="modalAgentsList">
+      <div id="modalAgentsList"
+        ondragover="event.preventDefault()"
+        ondrop="dropAgent(event)">
         <div class="spinner-wrap" style="padding:24px 0"><div class="spinner"></div></div>
       </div>
+      <button class="btn-debug" onclick="diagForm()">🔍 Diagnostiquer le formulaire lié</button>
+      <pre class="debug-box" id="debugBox"></pre>
       <div class="add-agent-form">
         <label>Ajouter un nouvel agent</label>
         <div class="input-row">
@@ -631,39 +662,54 @@
       .getAgentsList();
   }
 
-  function renderListeAgents(agents) {
-    if (!agents || agents.length === 0) {
-      document.getElementById('modalAgentsList').innerHTML =
-        '<p style="color:var(--muted);font-size:.88rem">Aucun agent trouvé dans le Spreadsheet.</p>';
-      return;
-    }
-    var html = '';
-    agents.forEach(function(a, i) {
-      var isHidden = a.hidden;
-      var nomEsc = escHtml(a.nom).replace(/'/g, "\\'");
-      html += '<div class="agent-row">'
-            + '<button class="move-btn" ' + (i === 0 ? 'disabled' : '') + ' onclick="deplacerAgent(\'' + nomEsc + '\',\'up\',this)" title="Monter">↑</button>'
-            + '<button class="move-btn" ' + (i === agents.length - 1 ? 'disabled' : '') + ' onclick="deplacerAgent(\'' + nomEsc + '\',\'down\',this)" title="Descendre">↓</button>'
-            + '<span class="agent-name' + (isHidden ? ' hidden-name' : '') + '">' + escHtml(a.nom) + '</span>'
-            + '<button class="toggle-btn ' + (isHidden ? 'hidden-' : 'visible') + '" '
-            + 'onclick="basculerAgent(\'' + nomEsc + '\', this)">'
-            + (isHidden ? '👁 Afficher' : '🚫 Masquer')
-            + '</button>'
-            + '</div>';
-    });
-    document.getElementById('modalAgentsList').innerHTML = html;
+  // ─── Drag & drop ordre agents ───────────────────────────────────────────────
+  var dragSrcNom = null;
+
+  function dragStart(e, nom) {
+    dragSrcNom = nom;
+    e.currentTarget.classList.add('dragging');
+    e.dataTransfer.effectAllowed = 'move';
+  }
+  function dragEnd(e) {
+    e.currentTarget.classList.remove('dragging');
+    document.querySelectorAll('.agent-row').forEach(function(r) { r.classList.remove('drag-over'); });
+  }
+  function dragEnter(e) {
+    e.currentTarget.classList.add('drag-over');
+  }
+  function dragLeave(e) {
+    e.currentTarget.classList.remove('drag-over');
+  }
+  function dropAgent(e) {
+    e.preventDefault();
+    var target = e.target.closest('.agent-row');
+    if (!target || !dragSrcNom) return;
+    var targetNom = target.getAttribute('data-nom');
+    if (!targetNom || targetNom === dragSrcNom) return;
+    // Recréer l'ordre localement
+    var rows = Array.from(document.querySelectorAll('.agent-row'));
+    var noms = rows.map(function(r) { return r.getAttribute('data-nom'); });
+    var fromIdx = noms.indexOf(dragSrcNom);
+    var toIdx = noms.indexOf(targetNom);
+    if (fromIdx === -1 || toIdx === -1) return;
+    noms.splice(fromIdx, 1);
+    noms.splice(toIdx, 0, dragSrcNom);
+    // Envoi à GAS pour sauvegarder + appliquer dans le Forms
+    google.script.run
+      .withSuccessHandler(function(agents) { renderListeAgents(agents); chargerDonnees(); })
+      .withFailureHandler(function(e) { afficherMsgModal('Erreur : ' + e.message, false); })
+      .saveAgentsOrder(noms);
   }
 
-  function deplacerAgent(nom, direction, btn) {
-    // Désactiver tous les boutons pendant l'opération
-    document.querySelectorAll('.move-btn, .toggle-btn').forEach(function(b) { b.disabled = true; });
+  // ─── Diagnostic formulaire ───────────────────────────────────────────────
+  function diagForm() {
+    var box = document.getElementById('debugBox');
+    box.style.display = 'block';
+    box.textContent = 'Chargement...';
     google.script.run
-      .withSuccessHandler(function(agents) { renderListeAgents(agents); })
-      .withFailureHandler(function(e) {
-        document.querySelectorAll('.move-btn, .toggle-btn').forEach(function(b) { b.disabled = false; });
-        afficherMsgModal('Erreur : ' + e.message, false);
-      })
-      .moveAgent(nom, direction);
+      .withSuccessHandler(function(info) { box.textContent = JSON.stringify(info, null, 2); })
+      .withFailureHandler(function(e) { box.textContent = 'Erreur : ' + e.message; })
+      .getFormDebugInfo();
   }
 
   function basculerAgent(nom, btn) {

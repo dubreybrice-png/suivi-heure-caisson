@@ -5,6 +5,9 @@
 
 var SPREADSHEET_ID = '1pMPyXUPnmNJ7D9QekiiDSq_W5860wN6WNVIEmucWhgU';
 
+// ID du Google Form lié (laisser vide pour auto-détection via le Spreadsheet)
+var FORM_ID = '';
+
 var POSTES = ['Door Man', 'Observateur', 'Sécurité', 'Speaker', 'Suiveur'];
 
 var AGENT_FICTIF = 'Fin brulage';
@@ -13,8 +16,55 @@ var DUREE_MIN_MINUTES = 10;
 var DUREE_MAX_MINUTES = 40;
 
 // ─────────────────────────────────────────────
-// Gestion de la visibilité des agents
-// (stored in Script Properties as JSON array)
+// Helpers formulaire
+// ─────────────────────────────────────────────
+
+/**
+ * Ouvre le Google Form : priorité à FORM_ID hardcodé, sinon auto-détection.
+ */
+function openLinkedForm() {
+  if (FORM_ID) return FormApp.openById(FORM_ID);
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var url = ss.getFormUrl();
+  if (!url) return null;
+  return FormApp.openByUrl(url);
+}
+
+/**
+ * Retourne des infos de debug sur le formulaire détecté (appelable depuis le client).
+ */
+function getFormDebugInfo() {
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var url = ss.getFormUrl();
+  var info = { formUrl: url || '(aucun)', formId: FORM_ID || '(auto)', items: [] };
+  try {
+    var form = openLinkedForm();
+    if (!form) { info.error = 'Formulaire introuvable'; return info; }
+    info.formTitle = form.getTitle();
+    info.publishedUrl = form.getPublishedUrl();
+    form.getItems().forEach(function(it) {
+      info.items.push({ type: String(it.getType()), title: it.getTitle().substring(0, 80) });
+    });
+  } catch(e) {
+    info.error = e.message;
+  }
+  return info;
+}
+
+/**
+ * Récupère l'item grille (CHECKBOX_GRID ou GRID) du formulaire.
+ * Retourne { grid, isCheckbox } ou null.
+ */
+function getFormGrid(form) {
+  var items = form.getItems(FormApp.ItemType.CHECKBOX_GRID);
+  if (items.length > 0) return { grid: items[0].asCheckboxGridItem(), isCheckbox: true };
+  items = form.getItems(FormApp.ItemType.GRID);
+  if (items.length > 0) return { grid: items[0].asGridItem(), isCheckbox: false };
+  return null;
+}
+
+// ─────────────────────────────────────────────
+// Gestion de la visibilité et de l'ordre des agents
 // ─────────────────────────────────────────────
 
 function getHiddenAgents() {
@@ -31,8 +81,24 @@ function getAgentsOrder() {
   return val ? JSON.parse(val) : [];
 }
 
-function saveAgentsOrder(list) {
-  PropertiesService.getScriptProperties().setProperty('agentsOrder', JSON.stringify(list));
+/**
+ * Sauvegarde un ordre complet (appelé depuis le client après drag & drop)
+ * et réordonne les lignes dans la grille du formulaire.
+ * Retourne la liste mise à jour.
+ */
+function saveAgentsOrder(orderedNoms) {
+  PropertiesService.getScriptProperties().setProperty('agentsOrder', JSON.stringify(orderedNoms));
+  // Appliquer l'ordre dans le formulaire
+  try {
+    var form = openLinkedForm();
+    if (form) {
+      var gridInfo = getFormGrid(form);
+      if (gridInfo) {
+        gridInfo.grid.setRows(orderedNoms);
+      }
+    }
+  } catch(e) { /* silencieux */ }
+  return getAgentsList();
 }
 
 /**
@@ -170,26 +236,19 @@ function addAgent(nom) {
   sheet.getRange(1, newCol).setValue(headerLabel);
 
   // ── 2. Ajouter une ligne dans la grille du Google Form ──
-  var formUrl = ss.getFormUrl();
-  if (!formUrl) {
-    return { ok: true, message: 'Agent ajouté dans le Spreadsheet. (Aucun formulaire lié détecté.)', agents: getAgentsList() };
-  }
   try {
-    var form = FormApp.openByUrl(formUrl);
-    // Tenter CHECKBOX_GRID (grille à choix multiples) puis GRID (grille radio)
-    var items = form.getItems(FormApp.ItemType.CHECKBOX_GRID);
-    var isCheckbox = true;
-    if (items.length === 0) {
-      items = form.getItems(FormApp.ItemType.GRID);
-      isCheckbox = false;
+    var form = openLinkedForm();
+    if (!form) {
+      return { ok: true, message: 'Agent ajouté dans le Spreadsheet. (Aucun formulaire lié détecté - vérifiez FORM_ID)', agents: getAgentsList() };
     }
-    if (items.length === 0) {
-      return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Aucune grille trouvée dans le formulaire (types détectés : ' + form.getItems().map(function(it){ return it.getType(); }).join(', ') + ').', agents: getAgentsList() };
+    var gridInfo = getFormGrid(form);
+    if (!gridInfo) {
+      var types = form.getItems().map(function(it){ return String(it.getType()); }).join(', ');
+      return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Aucune grille trouvée dans le formulaire "' + form.getTitle() + '" (types: ' + types + ')', agents: getAgentsList() };
     }
-    var grid = isCheckbox ? items[0].asCheckboxGridItem() : items[0].asGridItem();
-    var rows = grid.getRows();
+    var rows = gridInfo.grid.getRows();
     rows.push(nom);
-    grid.setRows(rows);
+    gridInfo.grid.setRows(rows);
   } catch(e) {
     return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Erreur formulaire : ' + e.message, agents: getAgentsList() };
   }
@@ -214,29 +273,24 @@ function moveAgent(nom, direction) {
   saveAgentsOrder(order);
 
   // Déplacer la ligne dans la grille du formulaire
-  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var formUrl = ss.getFormUrl();
-  if (formUrl) {
-    try {
-      var form = FormApp.openByUrl(formUrl);
-      var items = form.getItems(FormApp.ItemType.CHECKBOX_GRID);
-      var isCheckbox = true;
-      if (items.length === 0) { items = form.getItems(FormApp.ItemType.GRID); isCheckbox = false; }
-      if (items.length > 0) {
-        var grid = isCheckbox ? items[0].asCheckboxGridItem() : items[0].asGridItem();
-        var rows = grid.getRows();
+  try {
+    var form = openLinkedForm();
+    if (form) {
+      var gridInfo = getFormGrid(form);
+      if (gridInfo) {
+        var rows = gridInfo.grid.getRows();
         var rowIdx = rows.indexOf(nom);
         if (rowIdx !== -1) {
           var newRowIdx = rowIdx + (direction === 'up' ? -1 : 1);
           if (newRowIdx >= 0 && newRowIdx < rows.length) {
             var t = rows[newRowIdx]; rows[newRowIdx] = rows[rowIdx]; rows[rowIdx] = t;
-            grid.setRows(rows);
+            gridInfo.grid.setRows(rows);
           }
         }
       }
-    } catch(e) {
-      // Formulaire inaccessible : ordre local sauvegardé quand même
     }
+  } catch(e) {
+    // Formulaire inaccessible : ordre local sauvegardé quand même
   }
 
   return getAgentsList();
