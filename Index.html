@@ -264,6 +264,19 @@
     .toggle-btn.visible  { border-color: var(--green); color: var(--green); background: var(--green-lt); }
     .toggle-btn.hidden-  { border-color: var(--muted); color: var(--muted); background: var(--bg); }
     .toggle-btn:disabled { opacity: .5; cursor: not-allowed; }
+    .move-btn {
+      padding: 4px 9px;
+      border-radius: 6px;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      color: var(--muted);
+      font-size: .85rem;
+      cursor: pointer;
+      transition: all .15s;
+      line-height: 1;
+    }
+    .move-btn:hover:not(:disabled) { border-color: var(--primary); color: var(--primary); background: var(--primary-lt); }
+    .move-btn:disabled { opacity: .25; cursor: not-allowed; }
 
     /* ajout agent */
     .add-agent-form {
@@ -610,17 +623,32 @@
       return;
     }
     var html = '';
-    agents.forEach(function(a) {
+    agents.forEach(function(a, i) {
       var isHidden = a.hidden;
+      var nomEsc = escHtml(a.nom).replace(/'/g, "\\'");
       html += '<div class="agent-row">'
+            + '<button class="move-btn" ' + (i === 0 ? 'disabled' : '') + ' onclick="deplacerAgent(\'' + nomEsc + '\',\'up\',this)" title="Monter">↑</button>'
+            + '<button class="move-btn" ' + (i === agents.length - 1 ? 'disabled' : '') + ' onclick="deplacerAgent(\'' + nomEsc + '\',\'down\',this)" title="Descendre">↓</button>'
             + '<span class="agent-name' + (isHidden ? ' hidden-name' : '') + '">' + escHtml(a.nom) + '</span>'
             + '<button class="toggle-btn ' + (isHidden ? 'hidden-' : 'visible') + '" '
-            + 'onclick="basculerAgent(\'' + escHtml(a.nom).replace(/'/g,"\\'") + '\', this)">'
+            + 'onclick="basculerAgent(\'' + nomEsc + '\', this)">'
             + (isHidden ? '👁 Afficher' : '🚫 Masquer')
             + '</button>'
             + '</div>';
     });
     document.getElementById('modalAgentsList').innerHTML = html;
+  }
+
+  function deplacerAgent(nom, direction, btn) {
+    // Désactiver tous les boutons pendant l'opération
+    document.querySelectorAll('.move-btn, .toggle-btn').forEach(function(b) { b.disabled = true; });
+    google.script.run
+      .withSuccessHandler(function(agents) { renderListeAgents(agents); })
+      .withFailureHandler(function(e) {
+        document.querySelectorAll('.move-btn, .toggle-btn').forEach(function(b) { b.disabled = false; });
+        afficherMsgModal('Erreur : ' + e.message, false);
+      })
+      .moveAgent(nom, direction);
   }
 
   function basculerAgent(nom, btn) {

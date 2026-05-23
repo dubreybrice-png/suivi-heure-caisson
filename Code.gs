@@ -26,25 +26,98 @@ function saveHiddenAgents(list) {
   PropertiesService.getScriptProperties().setProperty('hiddenAgents', JSON.stringify(list));
 }
 
+function getAgentsOrder() {
+  var val = PropertiesService.getScriptProperties().getProperty('agentsOrder');
+  return val ? JSON.parse(val) : [];
+}
+
+function saveAgentsOrder(list) {
+  PropertiesService.getScriptProperties().setProperty('agentsOrder', JSON.stringify(list));
+}
+
 /**
- * Retourne la liste de tous les agents réels (hors agent fictif)
- * détectés dans les en-têtes du Spreadsheet, avec leur statut masqué.
+ * Retourne la liste de tous les agents réels (hors agent fictif),
+ * dans l'ordre personnalisé stocké, avec leur statut masqué.
  * [ { nom, hidden } ]
  */
 function getAgentsList() {
   var raw = getRawData();
   var hidden = getHiddenAgents();
-  var agents = [];
+  var order  = getAgentsOrder();
+
+  // Collecter tous les agents depuis les en-têtes
   var seen = {};
   raw.headers.forEach(function(h) {
     var nom = extractAgentName(h);
-    if (nom && nom !== AGENT_FICTIF && !seen[nom]) {
-      seen[nom] = true;
-      agents.push({ nom: nom, hidden: hidden.indexOf(nom) !== -1 });
-    }
+    if (nom && nom !== AGENT_FICTIF) seen[nom] = true;
   });
-  agents.sort(function(a, b) { return a.nom.localeCompare(b.nom); });
-  return agents;
+  var allNoms = Object.keys(seen);
+
+  // Construire la liste ordonnée :
+  // d'abord ceux présents dans order (dans l'ordre), puis les nouveaux triés
+  var ordered = [];
+  order.forEach(function(n) { if (seen[n]) ordered.push(n); });
+  allNoms.sort().forEach(function(n) {
+    if (ordered.indexOf(n) === -1) ordered.push(n);
+  });
+
+  // Sauvegarder si l'ordre a évolué
+  if (JSON.stringify(ordered) !== JSON.stringify(order)) saveAgentsOrder(ordered);
+
+  return ordered.map(function(n) {
+    return { nom: n, hidden: hidden.indexOf(n) !== -1 };
+  });
+}
+
+/**
+ * Déplace un agent vers le haut ou le bas dans l'ordre personnalisé
+ * ET dans le Google Form lié.
+ * direction : 'up' | 'down'
+ * Retourne la liste mise à jour.
+ */
+function moveAgent(nom, direction) {
+  var order = getAgentsOrder();
+  // S'assurer que l'ordre est à jour
+  var agents = getAgentsList();
+  order = agents.map(function(a) { return a.nom; });
+
+  var idx = order.indexOf(nom);
+  if (idx === -1) return getAgentsList();
+
+  var newIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (newIdx < 0 || newIdx >= order.length) return getAgentsList();
+
+  // Échanger dans l'ordre local
+  var tmp = order[newIdx];
+  order[newIdx] = order[idx];
+  order[idx] = tmp;
+  saveAgentsOrder(order);
+
+  // Déplacer la question dans le formulaire
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var formUrl = ss.getFormUrl();
+  if (formUrl) {
+    try {
+      var form = FormApp.openByUrl(formUrl);
+      var items = form.getItems();
+      var headerLabel = 'Quels sont les agents concernés [' + nom + ']';
+      var targetItem = null;
+      var targetFormIdx = -1;
+      items.forEach(function(it, i) {
+        if (it.getTitle() === headerLabel) { targetItem = it; targetFormIdx = i; }
+      });
+      if (targetItem !== null) {
+        var newFormIdx = targetFormIdx + (direction === 'up' ? -1 : 1);
+        if (newFormIdx >= 0 && newFormIdx < items.length) {
+          form.moveItem(targetFormIdx, newFormIdx);
+        }
+      }
+    } catch(e) {
+      // Formulaire inaccessible : on continue
+    }
+  }
+
+  return getAgentsList();
 }
 
 /**
