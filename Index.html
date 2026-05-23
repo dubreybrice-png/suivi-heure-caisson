@@ -175,6 +175,18 @@
     }
     .td-zero { color: var(--border) !important; }
 
+    /* ─── TRI ─── */
+    thead th { cursor: pointer; user-select: none; position: relative; padding-right: 26px; }
+    thead th::after {
+      content: '⇅';
+      position: absolute;
+      right: 8px;
+      opacity: .3;
+      font-size: .8em;
+    }
+    thead th.sort-asc::after  { content: '↑'; opacity: 1; }
+    thead th.sort-desc::after { content: '↓'; opacity: 1; }
+
     /* ─── MESSAGE VIDE ─── */
     .empty-msg {
       text-align: center;
@@ -244,6 +256,9 @@
 
 <script>
   var filtreActif = 'annee_courante';
+  var donneesActuelles = null;  // cache des données pour le tri
+  var sortCol = 'nom';          // colonne de tri courante
+  var sortAsc = true;           // direction
 
   // ─── Chargement des données ───────────────────────────────────────────
   function chargerDonnees() {
@@ -251,8 +266,12 @@
       '<div class="spinner-wrap"><div class="spinner"></div></div>';
 
     google.script.run
-      .withSuccessHandler(function(data) { afficher(data); })
-      .withFailureHandler(function(err)  { afficherErreur(err); })
+      .withSuccessHandler(function(data) {
+        donneesActuelles = data;
+        sortCol = 'nom'; sortAsc = true;
+        afficher(data);
+      })
+      .withFailureHandler(function(err) { afficherErreur(err); })
       .getData(filtreActif);
   }
 
@@ -274,6 +293,18 @@
     if (h === 0) return m + ' min';
     if (m === 0) return h + ' h';
     return h + ' h ' + (m < 10 ? '0' : '') + m;
+  }
+
+  // ─── Tri ────────────────────────────────────────────────────────────
+  function trierPar(col) {
+    if (!donneesActuelles) return;
+    if (sortCol === col) {
+      sortAsc = !sortAsc;
+    } else {
+      sortCol = col;
+      sortAsc = col === 'nom'; // alpha asc par défaut, numérique desc
+    }
+    afficher(donneesActuelles);
   }
 
   // ─── Affichage principal ──────────────────────────────────────────────
@@ -316,14 +347,38 @@
             + '<p>Aucune donnée trouvée pour la période sélectionnée.</p>'
             + '</div></div>';
     } else {
+      // ── Trier les agents ──
+      var agents = data.agents.slice();
+      agents.sort(function(a, b) {
+        var va, vb;
+        if (sortCol === 'nom') {
+          va = a.nom.toLowerCase(); vb = b.nom.toLowerCase();
+          return sortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
+        } else if (sortCol === 'total') {
+          va = a.total || 0; vb = b.total || 0;
+        } else {
+          va = a.postes[sortCol] || 0; vb = b.postes[sortCol] || 0;
+        }
+        return sortAsc ? va - vb : vb - va;
+      });
+
+      // ── En-têtes avec indicateurs de tri ──
+      function thClass(col) {
+        if (sortCol !== col) return '';
+        return ' class="' + (sortAsc ? 'sort-asc' : 'sort-desc') + '"';
+      }
+
       html += '<div class="table-wrapper"><table>';
       html += '<thead><tr>'
-            + '<th>Agent</th>';
-      postes.forEach(function(p) { html += '<th>' + p + '</th>'; });
-      html += '<th>Total</th>';
+            + '<th' + thClass('nom') + ' onclick="trierPar(\'nom\')">Agent</th>';
+      postes.forEach(function(p) {
+        html += '<th' + thClass(p) + ' onclick="trierPar(\'' + p.replace(/'/g,"\\'") + '\')">'
+              + p + '</th>';
+      });
+      html += '<th' + thClass('total') + ' onclick="trierPar(\'total\')">Total</th>';
       html += '</tr></thead><tbody>';
 
-      data.agents.forEach(function(agent) {
+      agents.forEach(function(agent) {
         html += '<tr>';
         html += '<td><strong>' + escHtml(agent.nom) + '</strong></td>';
         postes.forEach(function(p) {
