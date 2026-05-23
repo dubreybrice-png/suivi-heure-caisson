@@ -187,6 +187,134 @@
     thead th.sort-asc::after  { content: '↑'; opacity: 1; }
     thead th.sort-desc::after { content: '↓'; opacity: 1; }
 
+    /* ─── BOUTON GÉRER ─── */
+    .btn-manage {
+      margin-left: auto;
+      padding: 8px 18px;
+      border: 2px solid var(--primary);
+      background: var(--surface);
+      border-radius: 99px;
+      font-size: .88rem;
+      font-weight: 600;
+      color: var(--primary);
+      cursor: pointer;
+      transition: all .18s;
+    }
+    .btn-manage:hover { background: var(--primary); color: #fff; }
+
+    /* ─── MODAL ─── */
+    .modal-overlay {
+      display: none;
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,.45);
+      z-index: 100;
+      justify-content: center;
+      align-items: flex-start;
+      padding: 40px 16px;
+      overflow-y: auto;
+    }
+    .modal-overlay.open { display: flex; }
+    .modal {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: 0 8px 40px rgba(0,0,0,.2);
+      width: 100%;
+      max-width: 480px;
+      padding: 28px 24px;
+    }
+    .modal h2 {
+      font-size: 1.05rem;
+      font-weight: 700;
+      margin-bottom: 20px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .modal-close {
+      margin-left: auto;
+      background: none;
+      border: none;
+      font-size: 1.3rem;
+      cursor: pointer;
+      color: var(--muted);
+      line-height: 1;
+    }
+    .modal-close:hover { color: var(--text); }
+
+    /* liste agents dans modal */
+    .agent-row {
+      display: flex;
+      align-items: center;
+      padding: 9px 0;
+      border-bottom: 1px solid var(--border);
+      gap: 10px;
+    }
+    .agent-row:last-child { border-bottom: none; }
+    .agent-row .agent-name { flex: 1; font-size: .9rem; }
+    .agent-row .agent-name.hidden-name { color: var(--muted); text-decoration: line-through; }
+    .toggle-btn {
+      padding: 4px 12px;
+      border-radius: 99px;
+      border: 1.5px solid;
+      font-size: .78rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all .15s;
+    }
+    .toggle-btn.visible  { border-color: var(--green); color: var(--green); background: var(--green-lt); }
+    .toggle-btn.hidden-  { border-color: var(--muted); color: var(--muted); background: var(--bg); }
+    .toggle-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    /* ajout agent */
+    .add-agent-form {
+      margin-top: 22px;
+      padding-top: 18px;
+      border-top: 2px solid var(--border);
+    }
+    .add-agent-form label {
+      display: block;
+      font-size: .8rem;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: .5px;
+      margin-bottom: 8px;
+    }
+    .add-agent-form .input-row {
+      display: flex; gap: 8px;
+    }
+    .add-agent-form input {
+      flex: 1;
+      padding: 9px 12px;
+      border: 1.5px solid var(--border);
+      border-radius: 8px;
+      font-size: .9rem;
+      outline: none;
+      transition: border-color .15s;
+    }
+    .add-agent-form input:focus { border-color: var(--primary); }
+    .add-agent-form .btn-add {
+      padding: 9px 18px;
+      background: var(--primary);
+      color: #fff;
+      border: none;
+      border-radius: 8px;
+      font-size: .9rem;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background .15s;
+    }
+    .add-agent-form .btn-add:hover { background: var(--accent); }
+    .add-agent-form .btn-add:disabled { opacity: .5; cursor: not-allowed; }
+    .modal-msg {
+      margin-top: 10px;
+      font-size: .83rem;
+      padding: 6px 10px;
+      border-radius: 6px;
+    }
+    .modal-msg.ok  { background: var(--green-lt); color: var(--green); }
+    .modal-msg.err { background: #fee2e2; color: #dc2626; }
+
     /* ─── MESSAGE VIDE ─── */
     .empty-msg {
       text-align: center;
@@ -245,6 +373,28 @@
     <button class="filter-btn" data-filtre="tout" onclick="setFiltre(this)">
       Tout le temps
     </button>
+    <button class="btn-manage" onclick="ouvrirGestion()">⚙ Gérer les agents</button>
+  </div>
+
+  <!-- Modal gestion agents -->
+  <div class="modal-overlay" id="modalOverlay" onclick="fermerSiExterieur(event)">
+    <div class="modal">
+      <h2>
+        👥 Gestion des agents
+        <button class="modal-close" onclick="fermerGestion()">✕</button>
+      </h2>
+      <div id="modalAgentsList">
+        <div class="spinner-wrap" style="padding:24px 0"><div class="spinner"></div></div>
+      </div>
+      <div class="add-agent-form">
+        <label>Ajouter un nouvel agent</label>
+        <div class="input-row">
+          <input type="text" id="newAgentInput" placeholder="NOM Prénom" onkeydown="if(event.key==='Enter') ajouterAgent()">
+          <button class="btn-add" id="btnAjout" onclick="ajouterAgent()">Ajouter</button>
+        </div>
+        <div id="modalMsg" class="modal-msg" style="display:none"></div>
+      </div>
+    </div>
   </div>
 
   <!-- Zone de contenu (spinner → stats + tableau) -->
@@ -426,6 +576,100 @@
   window.addEventListener('load', function() {
     chargerDonnees();
   });
+
+  // ─── Gestion des agents ───────────────────────────────────────────────
+  function ouvrirGestion() {
+    document.getElementById('modalOverlay').classList.add('open');
+    chargerListeAgents();
+  }
+
+  function fermerGestion() {
+    document.getElementById('modalOverlay').classList.remove('open');
+  }
+
+  function fermerSiExterieur(e) {
+    if (e.target === document.getElementById('modalOverlay')) fermerGestion();
+  }
+
+  function chargerListeAgents() {
+    document.getElementById('modalAgentsList').innerHTML =
+      '<div class="spinner-wrap" style="padding:24px 0"><div class="spinner"></div></div>';
+    google.script.run
+      .withSuccessHandler(renderListeAgents)
+      .withFailureHandler(function(e) {
+        document.getElementById('modalAgentsList').innerHTML =
+          '<p style="color:#dc2626;font-size:.85rem">Erreur : ' + escHtml(e.message) + '</p>';
+      })
+      .getAgentsList();
+  }
+
+  function renderListeAgents(agents) {
+    if (!agents || agents.length === 0) {
+      document.getElementById('modalAgentsList').innerHTML =
+        '<p style="color:var(--muted);font-size:.88rem">Aucun agent trouvé dans le Spreadsheet.</p>';
+      return;
+    }
+    var html = '';
+    agents.forEach(function(a) {
+      var isHidden = a.hidden;
+      html += '<div class="agent-row">'
+            + '<span class="agent-name' + (isHidden ? ' hidden-name' : '') + '">' + escHtml(a.nom) + '</span>'
+            + '<button class="toggle-btn ' + (isHidden ? 'hidden-' : 'visible') + '" '
+            + 'onclick="basculerAgent(\'' + escHtml(a.nom).replace(/'/g,"\\'") + '\', this)">'
+            + (isHidden ? '👁 Afficher' : '🚫 Masquer')
+            + '</button>'
+            + '</div>';
+    });
+    document.getElementById('modalAgentsList').innerHTML = html;
+  }
+
+  function basculerAgent(nom, btn) {
+    btn.disabled = true;
+    google.script.run
+      .withSuccessHandler(function(agents) {
+        renderListeAgents(agents);
+        chargerDonnees(); // recharger le tableau principal
+      })
+      .withFailureHandler(function(e) {
+        btn.disabled = false;
+        afficherMsgModal('Erreur : ' + e.message, false);
+      })
+      .toggleAgent(nom);
+  }
+
+  function ajouterAgent() {
+    var input = document.getElementById('newAgentInput');
+    var nom = input.value.trim();
+    if (!nom) { afficherMsgModal('Veuillez saisir un nom.', false); return; }
+    var btn = document.getElementById('btnAjout');
+    btn.disabled = true;
+    input.disabled = true;
+    google.script.run
+      .withSuccessHandler(function(result) {
+        btn.disabled = false;
+        input.disabled = false;
+        afficherMsgModal(result.message, result.ok);
+        if (result.ok) {
+          input.value = '';
+          renderListeAgents(result.agents);
+          chargerDonnees();
+        }
+      })
+      .withFailureHandler(function(e) {
+        btn.disabled = false;
+        input.disabled = false;
+        afficherMsgModal('Erreur : ' + e.message, false);
+      })
+      .addAgent(nom);
+  }
+
+  function afficherMsgModal(msg, ok) {
+    var el = document.getElementById('modalMsg');
+    el.textContent = msg;
+    el.className = 'modal-msg ' + (ok ? 'ok' : 'err');
+    el.style.display = 'block';
+    setTimeout(function() { el.style.display = 'none'; }, 4000);
+  }
 </script>
 
 </body>

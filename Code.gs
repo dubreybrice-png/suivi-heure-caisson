@@ -13,6 +13,109 @@ var DUREE_MIN_MINUTES = 10;
 var DUREE_MAX_MINUTES = 40;
 
 // ─────────────────────────────────────────────
+// Gestion de la visibilité des agents
+// (stored in Script Properties as JSON array)
+// ─────────────────────────────────────────────
+
+function getHiddenAgents() {
+  var val = PropertiesService.getScriptProperties().getProperty('hiddenAgents');
+  return val ? JSON.parse(val) : [];
+}
+
+function saveHiddenAgents(list) {
+  PropertiesService.getScriptProperties().setProperty('hiddenAgents', JSON.stringify(list));
+}
+
+/**
+ * Retourne la liste de tous les agents réels (hors agent fictif)
+ * détectés dans les en-têtes du Spreadsheet, avec leur statut masqué.
+ * [ { nom, hidden } ]
+ */
+function getAgentsList() {
+  var raw = getRawData();
+  var hidden = getHiddenAgents();
+  var agents = [];
+  var seen = {};
+  raw.headers.forEach(function(h) {
+    var nom = extractAgentName(h);
+    if (nom && nom !== AGENT_FICTIF && !seen[nom]) {
+      seen[nom] = true;
+      agents.push({ nom: nom, hidden: hidden.indexOf(nom) !== -1 });
+    }
+  });
+  agents.sort(function(a, b) { return a.nom.localeCompare(b.nom); });
+  return agents;
+}
+
+/**
+ * Bascule la visibilité d'un agent.
+ * Retourne la liste mise à jour.
+ */
+function toggleAgent(nom) {
+  var hidden = getHiddenAgents();
+  var idx = hidden.indexOf(nom);
+  if (idx === -1) {
+    hidden.push(nom);
+  } else {
+    hidden.splice(idx, 1);
+  }
+  saveHiddenAgents(hidden);
+  return getAgentsList();
+}
+
+/**
+ * Ajoute un nouvel agent :
+ * 1. Ajoute une colonne dans le Spreadsheet (en-tête formaté).
+ * 2. Ajoute une question déroulante dans le Google Form lié.
+ * Retourne { ok, message, agents }.
+ */
+function addAgent(nom) {
+  nom = nom.trim();
+  if (!nom) return { ok: false, message: 'Nom vide.' };
+  if (nom === AGENT_FICTIF) return { ok: false, message: 'Nom réservé.' };
+
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var sheet = ss.getSheetByName('general')
+            || ss.getSheetByName('Réponses au formulaire 1')
+            || ss.getSheets()[0];
+
+  // Vérifier que l'agent n'existe pas déjà
+  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  for (var i = 0; i < headers.length; i++) {
+    var existing = extractAgentName(headers[i]);
+    if (existing && existing.toLowerCase() === nom.toLowerCase()) {
+      return { ok: false, message: 'Cet agent existe déjà.' };
+    }
+  }
+
+  // ── 1. Ajouter la colonne dans le Spreadsheet ──
+  var newCol = sheet.getLastColumn() + 1;
+  var headerLabel = 'Quels sont les agents concernés [' + nom + ']';
+  sheet.getRange(1, newCol).setValue(headerLabel);
+
+  // ── 2. Ajouter la question dans le Google Form lié ──
+  var formUrl = ss.getFormUrl();
+  if (formUrl) {
+    try {
+      var form = FormApp.openByUrl(formUrl);
+      var item = form.addListItem();
+      item.setTitle(headerLabel);
+      item.setRequired(false);
+      // Options = postes de travail + une option vide
+      var choices = [''].concat(POSTES).map(function(p) {
+        return item.createChoice(p);
+      });
+      item.setChoices(choices);
+    } catch(e) {
+      // Le form n'est pas accessible : on continue quand même
+      return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Impossible d\'accéder au formulaire : ' + e.message, agents: getAgentsList() };
+    }
+  }
+
+  return { ok: true, message: 'Agent "' + nom + '" ajouté avec succès.', agents: getAgentsList() };
+}
+
+// ─────────────────────────────────────────────
 // Point d'entrée de la Web App
 // ─────────────────────────────────────────────
 function doGet() {
@@ -217,7 +320,10 @@ function getData(filtre) {
   });
 
   // ── Construire le tableau résultat trié ──
-  var agentsList = Object.keys(agentsMap).sort().map(function(nom) {
+  var hidden = getHiddenAgents();
+  var agentsList = Object.keys(agentsMap)
+    .filter(function(nom) { return hidden.indexOf(nom) === -1; })
+    .sort().map(function(nom) {
     return {
       nom:    nom,
       postes: agentsMap[nom].postes,
