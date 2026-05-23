@@ -171,23 +171,30 @@ function addAgent(nom) {
 
   // ── 2. Ajouter une ligne dans la grille du Google Form ──
   var formUrl = ss.getFormUrl();
-  if (formUrl) {
-    try {
-      var form = FormApp.openByUrl(formUrl);
-      var items = form.getItems(FormApp.ItemType.GRID);
-      if (items.length === 0) {
-        return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Aucune grille trouvée dans le formulaire.', agents: getAgentsList() };
-      }
-      var grid = items[0].asGridItem();
-      var rows = grid.getRows();
-      rows.push(nom);
-      grid.setRows(rows);
-    } catch(e) {
-      return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Erreur formulaire : ' + e.message, agents: getAgentsList() };
+  if (!formUrl) {
+    return { ok: true, message: 'Agent ajouté dans le Spreadsheet. (Aucun formulaire lié détecté.)', agents: getAgentsList() };
+  }
+  try {
+    var form = FormApp.openByUrl(formUrl);
+    // Tenter CHECKBOX_GRID (grille à choix multiples) puis GRID (grille radio)
+    var items = form.getItems(FormApp.ItemType.CHECKBOX_GRID);
+    var isCheckbox = true;
+    if (items.length === 0) {
+      items = form.getItems(FormApp.ItemType.GRID);
+      isCheckbox = false;
     }
+    if (items.length === 0) {
+      return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Aucune grille trouvée dans le formulaire (types détectés : ' + form.getItems().map(function(it){ return it.getType(); }).join(', ') + ').', agents: getAgentsList() };
+    }
+    var grid = isCheckbox ? items[0].asCheckboxGridItem() : items[0].asGridItem();
+    var rows = grid.getRows();
+    rows.push(nom);
+    grid.setRows(rows);
+  } catch(e) {
+    return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Erreur formulaire : ' + e.message, agents: getAgentsList() };
   }
 
-  return { ok: true, message: 'Agent "' + nom + '" ajouté avec succès.', agents: getAgentsList() };
+  return { ok: true, message: 'Agent "' + nom + '" ajouté avec succès dans le Spreadsheet et le formulaire.', agents: getAgentsList() };
 }
 
 /**
@@ -212,9 +219,11 @@ function moveAgent(nom, direction) {
   if (formUrl) {
     try {
       var form = FormApp.openByUrl(formUrl);
-      var items = form.getItems(FormApp.ItemType.GRID);
+      var items = form.getItems(FormApp.ItemType.CHECKBOX_GRID);
+      var isCheckbox = true;
+      if (items.length === 0) { items = form.getItems(FormApp.ItemType.GRID); isCheckbox = false; }
       if (items.length > 0) {
-        var grid = items[0].asGridItem();
+        var grid = isCheckbox ? items[0].asCheckboxGridItem() : items[0].asGridItem();
         var rows = grid.getRows();
         var rowIdx = rows.indexOf(nom);
         if (rowIdx !== -1) {
