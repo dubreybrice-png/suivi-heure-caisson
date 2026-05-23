@@ -36,7 +36,9 @@ function include(filename) {
 // ─────────────────────────────────────────────
 function getRawData() {
   var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
-  var sheet = ss.getSheets()[0]; // première feuille
+  var sheet = ss.getSheetByName('Réponses au formulaire 1')
+            || ss.getSheetByName('Form Responses 1')
+            || ss.getSheets()[0];
   var lastRow = sheet.getLastRow();
   var lastCol = sheet.getLastColumn();
 
