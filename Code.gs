@@ -139,7 +139,7 @@ function toggleAgent(nom) {
 /**
  * Ajoute un nouvel agent :
  * 1. Ajoute une colonne dans le Spreadsheet (en-tête formaté).
- * 2. Ajoute une question déroulante dans le Google Form lié.
+ * 2. Ajoute une LIGNE dans la grille du Google Form lié.
  * Retourne { ok, message, agents }.
  */
 function addAgent(nom) {
@@ -152,7 +152,7 @@ function addAgent(nom) {
             || ss.getSheetByName('Réponses au formulaire 1')
             || ss.getSheets()[0];
 
-  // Vérifier que l'agent n'existe pas déjà
+  // Vérifier que l'agent n'existe pas déjà dans les en-têtes
   var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
   for (var i = 0; i < headers.length; i++) {
     var existing = extractAgentName(headers[i]);
@@ -162,30 +162,75 @@ function addAgent(nom) {
   }
 
   // ── 1. Ajouter la colonne dans le Spreadsheet ──
+  // Le format d'en-tête dans le Spreadsheet est "Quels sont les agents concernés [NOM]"
+  // mais dans la grille du Forms, la ligne correspond juste au nom de l'agent.
+  // Google Forms export dans le Spreadsheet : "Quels sont les agents concernés [NOM]"
   var newCol = sheet.getLastColumn() + 1;
   var headerLabel = 'Quels sont les agents concernés [' + nom + ']';
   sheet.getRange(1, newCol).setValue(headerLabel);
 
-  // ── 2. Ajouter la question dans le Google Form lié ──
+  // ── 2. Ajouter une ligne dans la grille du Google Form ──
   var formUrl = ss.getFormUrl();
   if (formUrl) {
     try {
       var form = FormApp.openByUrl(formUrl);
-      var item = form.addListItem();
-      item.setTitle(headerLabel);
-      item.setRequired(false);
-      // Options = postes de travail + une option vide
-      var choices = [''].concat(POSTES).map(function(p) {
-        return item.createChoice(p);
-      });
-      item.setChoices(choices);
+      var items = form.getItems(FormApp.ItemType.GRID);
+      if (items.length === 0) {
+        return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Aucune grille trouvée dans le formulaire.', agents: getAgentsList() };
+      }
+      var grid = items[0].asGridItem();
+      var rows = grid.getRows();
+      rows.push(nom);
+      grid.setRows(rows);
     } catch(e) {
-      // Le form n'est pas accessible : on continue quand même
-      return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Impossible d\'accéder au formulaire : ' + e.message, agents: getAgentsList() };
+      return { ok: true, message: 'Agent ajouté dans le Spreadsheet. Erreur formulaire : ' + e.message, agents: getAgentsList() };
     }
   }
 
   return { ok: true, message: 'Agent "' + nom + '" ajouté avec succès.', agents: getAgentsList() };
+}
+
+/**
+ * Déplace un agent vers le haut ou le bas dans la grille du formulaire
+ * ET dans l'ordre personnalisé local.
+ * direction : 'up' | 'down'
+ */
+function moveAgent(nom, direction) {
+  // Mettre à jour l'ordre local
+  var agents = getAgentsList();
+  var order = agents.map(function(a) { return a.nom; });
+  var idx = order.indexOf(nom);
+  if (idx === -1) return getAgentsList();
+  var newIdx = direction === 'up' ? idx - 1 : idx + 1;
+  if (newIdx < 0 || newIdx >= order.length) return getAgentsList();
+  var tmp = order[newIdx]; order[newIdx] = order[idx]; order[idx] = tmp;
+  saveAgentsOrder(order);
+
+  // Déplacer la ligne dans la grille du formulaire
+  var ss = SpreadsheetApp.openById(SPREADSHEET_ID);
+  var formUrl = ss.getFormUrl();
+  if (formUrl) {
+    try {
+      var form = FormApp.openByUrl(formUrl);
+      var items = form.getItems(FormApp.ItemType.GRID);
+      if (items.length > 0) {
+        var grid = items[0].asGridItem();
+        var rows = grid.getRows();
+        var rowIdx = rows.indexOf(nom);
+        if (rowIdx !== -1) {
+          var newRowIdx = rowIdx + (direction === 'up' ? -1 : 1);
+          if (newRowIdx >= 0 && newRowIdx < rows.length) {
+            var t = rows[newRowIdx]; rows[newRowIdx] = rows[rowIdx]; rows[rowIdx] = t;
+            grid.setRows(rows);
+          }
+        }
+      }
+    } catch(e) {
+      // Formulaire inaccessible : ordre local sauvegardé quand même
+    }
+  }
+
+  return getAgentsList();
 }
 
 // ─────────────────────────────────────────────
