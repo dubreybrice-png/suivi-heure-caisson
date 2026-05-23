@@ -375,19 +375,8 @@
 
 <main>
 
-  <!-- Filtres -->
-  <div class="filters" id="filters">
-    <button class="filter-btn active" data-filtre="annee_courante" onclick="setFiltre(this)">
-      Année en cours
-    </button>
-    <button class="filter-btn" data-filtre="2025" onclick="setFiltre(this)">
-      2025
-    </button>
-    <button class="filter-btn" data-filtre="tout" onclick="setFiltre(this)">
-      Tout le temps
-    </button>
-    <button class="btn-manage" onclick="ouvrirGestion()">⚙ Gérer les agents</button>
-  </div>
+  <!-- Filtres (générés dynamiquement) -->
+  <div class="filters" id="filters"></div>
 
   <!-- Modal gestion agents -->
   <div class="modal-overlay" id="modalOverlay" onclick="fermerSiExterieur(event)">
@@ -419,9 +408,34 @@
 
 <script>
   var filtreActif = 'annee_courante';
-  var donneesActuelles = null;  // cache des données pour le tri
-  var sortCol = 'nom';          // colonne de tri courante
-  var sortAsc = true;           // direction
+  var donneesActuelles = null;
+  var sortCol = 'nom';
+  var sortAsc = true;
+
+  // ─── Génération dynamique des boutons de filtre ──────────────────────
+  function buildFiltres() {
+    var annee = new Date().getFullYear();
+    var container = document.getElementById('filters');
+    var btns = [
+      { label: 'Année en cours (' + annee + ')', filtre: 'annee_courante', active: true },
+      { label: String(annee - 1),                filtre: String(annee - 1), active: false },
+      { label: 'Tout le temps',                  filtre: 'tout',            active: false }
+    ];
+    btns.forEach(function(b) {
+      var el = document.createElement('button');
+      el.className = 'filter-btn' + (b.active ? ' active' : '');
+      el.setAttribute('data-filtre', b.filtre);
+      el.textContent = b.label;
+      el.onclick = function() { setFiltre(el); };
+      container.appendChild(el);
+    });
+    // Bouton gérer
+    var manage = document.createElement('button');
+    manage.className = 'btn-manage';
+    manage.textContent = '⚙ Gérer les agents';
+    manage.onclick = ouvrirGestion;
+    container.appendChild(manage);
+  }
 
   // ─── Chargement des données ───────────────────────────────────────────
   function chargerDonnees() {
@@ -587,6 +601,7 @@
 
   // ─── Init ─────────────────────────────────────────────────────────────
   window.addEventListener('load', function() {
+    buildFiltres();
     chargerDonnees();
   });
 

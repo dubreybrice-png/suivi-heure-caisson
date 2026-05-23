@@ -397,14 +397,12 @@ function getData(filtre) {
   // Note : si ligneDebut reste ouvert (pas de fin), on l'ignore
 
   // ── Appliquer le filtre de date ──
-  var now = new Date();
-  var anneeEnCours = now.getFullYear();
-
   var seancesFiltrees = seances.filter(function(s) {
     if (!s.debut) return false;
     var annee = s.debut.getFullYear();
-    if (filtre === 'annee_courante') return annee === anneeEnCours;
-    if (filtre === '2025')           return annee === 2025;
+    if (filtre === 'annee_courante') return annee === new Date().getFullYear();
+    var anneeFiltre = parseInt(filtre);
+    if (!isNaN(anneeFiltre)) return annee === anneeFiltre;
     return true; // 'tout'
   });
 
