@@ -52,14 +52,34 @@ function getFormDebugInfo() {
 }
 
 /**
- * Récupère l'item grille (CHECKBOX_GRID ou GRID) du formulaire.
+ * Récupère l'item grille "Quels sont les agents concernés" du formulaire.
+ * Cherche dans CHECKBOX_GRID puis GRID, et cible celle dont le titre correspond.
  * Retourne { grid, isCheckbox } ou null.
  */
 function getFormGrid(form) {
-  var items = form.getItems(FormApp.ItemType.CHECKBOX_GRID);
-  if (items.length > 0) return { grid: items[0].asCheckboxGridItem(), isCheckbox: true };
-  items = form.getItems(FormApp.ItemType.GRID);
-  if (items.length > 0) return { grid: items[0].asGridItem(), isCheckbox: false };
+  var types = [
+    { type: FormApp.ItemType.CHECKBOX_GRID, isCheckbox: true },
+    { type: FormApp.ItemType.GRID,          isCheckbox: false }
+  ];
+  for (var t = 0; t < types.length; t++) {
+    var items = form.getItems(types[t].type);
+    // Chercher d'abord une grille dont le titre contient "agents concernés"
+    for (var i = 0; i < items.length; i++) {
+      if (items[i].getTitle().toLowerCase().indexOf('agents concern') !== -1) {
+        return {
+          grid: types[t].isCheckbox ? items[i].asCheckboxGridItem() : items[i].asGridItem(),
+          isCheckbox: types[t].isCheckbox
+        };
+      }
+    }
+    // Fallback : première grille trouvée
+    if (items.length > 0) {
+      return {
+        grid: types[t].isCheckbox ? items[0].asCheckboxGridItem() : items[0].asGridItem(),
+        isCheckbox: types[t].isCheckbox
+      };
+    }
+  }
   return null;
 }
 
