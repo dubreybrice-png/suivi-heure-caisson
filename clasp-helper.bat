@@ -18,10 +18,6 @@ if "%1"=="deploy" (
 
 if "%1"=="pushdeploy" (
   cmd /c "clasp push --force"
-  if "%DEPLOY_ID%"=="" (
-    echo Push effectue. DEPLOY_ID non defini, redeploy ignore.
-    goto :eof
-  )
   cmd /c "clasp redeploy %DEPLOY_ID% -d stable"
   goto :eof
 )
